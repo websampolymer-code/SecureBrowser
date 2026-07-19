@@ -16,8 +16,5 @@ local.properties
 *.jks
 *.keystore
 
-# GitHub Actions
-.github/workflows/*.yml
-
 # Debug
 *.hprof
