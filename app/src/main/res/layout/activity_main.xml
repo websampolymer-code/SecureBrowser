@@ -80,7 +80,7 @@
             android:layout_height="36dp"
             android:src="@drawable/ic_close"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Close & Clear"
+            android:contentDescription="Close and Clear"
             android:scaleType="centerInside"
             android:padding="6dp" />
     </LinearLayout>
