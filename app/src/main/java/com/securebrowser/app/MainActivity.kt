@@ -1,8 +1,17 @@
 package com.securebrowser.app
 
 import android.app.Activity
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
 import android.os.Bundle
+import android.os.IBinder
 import android.os.PowerManager
 import android.view.KeyEvent
 import android.view.View
@@ -12,6 +21,95 @@ import android.webkit.*
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ProgressBar
+
+class ScreenOffService : Service() {
+
+    private val screenOffReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_SCREEN_OFF) {
+                clearAllAndKill()
+            }
+        }
+    }
+
+    private var receiverRegistered = false
+
+    override fun onCreate() {
+        super.onCreate()
+        val filter = IntentFilter(Intent.ACTION_SCREEN_OFF)
+        registerReceiver(screenOffReceiver, filter)
+        receiverRegistered = true
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Secure Browser",
+                NotificationManager.IMPORTANCE_MIN
+            )
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.createNotificationChannel(channel)
+            val notification = Notification.Builder(this, CHANNEL_ID)
+                .setContentTitle("")
+                .setSmallIcon(R.drawable.ic_close)
+                .build()
+            startForeground(1, notification)
+        } else {
+            @Suppress("DEPRECATION")
+            val notification = Notification.Builder(this)
+                .setSmallIcon(R.drawable.ic_close)
+                .build()
+            startForeground(1, notification)
+        }
+    }
+
+    private fun clearAllAndKill() {
+        try {
+            cacheDir?.deleteRecursively()
+            filesDir?.deleteRecursively()
+            externalCacheDir?.deleteRecursively()
+            getSharedPreferences("secure_browser_prefs", Context.MODE_PRIVATE)
+                .edit().clear().commit()
+        } catch (_: Exception) {}
+
+        try {
+            val webView = WebView(this)
+            webView.clearHistory()
+            webView.clearCache(true)
+            webView.clearFormData()
+            webView.destroy()
+        } catch (_: Exception) {}
+
+        stopSelf()
+        android.os.Process.killProcess(android.os.Process.myPid())
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onDestroy() {
+        if (receiverRegistered) {
+            unregisterReceiver(screenOffReceiver)
+            receiverRegistered = false
+        }
+        super.onDestroy()
+    }
+
+    companion object {
+        const val CHANNEL_ID = "secure_browser_service"
+
+        fun start(context: Context) {
+            val intent = Intent(context, ScreenOffService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
+
+        fun stop(context: Context) {
+            context.stopService(Intent(context, ScreenOffService::class.java))
+        }
+    }
+}
 
 class MainActivity : Activity() {
 
@@ -41,20 +139,10 @@ class MainActivity : Activity() {
         setupUrlBar()
         setupButtons()
 
+        ScreenOffService.start(this)
+
         if (savedInstanceState == null) {
             webView.loadUrl("https://www.google.com")
-        }
-    }
-
-    private fun isScreenOff(): Boolean {
-        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        return !pm.isInteractive
-    }
-
-    override fun onStop() {
-        super.onStop()
-        if (isScreenOff()) {
-            clearAndClose()
         }
     }
 
@@ -154,6 +242,7 @@ class MainActivity : Activity() {
                 .edit().clear().commit()
         } catch (_: Exception) {}
 
+        ScreenOffService.stop(this)
         finishAffinity()
         System.exit(0)
     }
