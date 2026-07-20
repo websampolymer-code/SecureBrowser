@@ -5,13 +5,13 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.view.KeyEvent
 import android.view.View
@@ -24,21 +24,26 @@ import android.widget.ProgressBar
 
 class ScreenOffService : Service() {
 
-    private val screenOffReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == Intent.ACTION_SCREEN_OFF) {
+    private val handler = Handler(Looper.getMainLooper())
+    private var wasScreenOn = true
+
+    private val screenCheckRunnable = object : Runnable {
+        override fun run() {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            val isOn = pm.isInteractive
+
+            if (wasScreenOn && !isOn) {
                 clearAllAndKill()
+                return
             }
+
+            wasScreenOn = isOn
+            handler.postDelayed(this, 500)
         }
     }
 
-    private var receiverRegistered = false
-
     override fun onCreate() {
         super.onCreate()
-        val filter = IntentFilter(Intent.ACTION_SCREEN_OFF)
-        registerReceiver(screenOffReceiver, filter)
-        receiverRegistered = true
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -60,6 +65,10 @@ class ScreenOffService : Service() {
                 .build()
             startForeground(1, notification)
         }
+
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wasScreenOn = pm.isInteractive
+        handler.postDelayed(screenCheckRunnable, 500)
     }
 
     private fun clearAllAndKill() {
@@ -83,13 +92,14 @@ class ScreenOffService : Service() {
         android.os.Process.killProcess(android.os.Process.myPid())
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        return START_STICKY
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        if (receiverRegistered) {
-            unregisterReceiver(screenOffReceiver)
-            receiverRegistered = false
-        }
+        handler.removeCallbacks(screenCheckRunnable)
         super.onDestroy()
     }
 
