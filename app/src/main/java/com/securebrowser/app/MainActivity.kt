@@ -1,10 +1,10 @@
 package com.securebrowser.app
 
 import android.app.Activity
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.net.http.SslError
+import android.content.IntentFilter
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
@@ -14,7 +14,6 @@ import android.webkit.*
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ProgressBar
-import android.widget.Toast
 
 class MainActivity : Activity() {
 
@@ -26,6 +25,16 @@ class MainActivity : Activity() {
     private lateinit var btnForward: ImageButton
     private lateinit var btnRefresh: ImageButton
     private lateinit var btnClose: ImageButton
+
+    private val screenOffReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_SCREEN_OFF) {
+                clearAndClose()
+            }
+        }
+    }
+
+    private var receiverRegistered = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,6 +55,21 @@ class MainActivity : Activity() {
 
         if (savedInstanceState == null) {
             webView.loadUrl("https://www.google.com")
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val filter = IntentFilter(Intent.ACTION_SCREEN_OFF)
+        registerReceiver(screenOffReceiver, filter)
+        receiverRegistered = true
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (receiverRegistered) {
+            unregisterReceiver(screenOffReceiver)
+            receiverRegistered = false
         }
     }
 
@@ -83,17 +107,7 @@ class MainActivity : Activity() {
             if (actionId == EditorInfo.IME_ACTION_GO ||
                 (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
             ) {
-                val input = urlBar.text.toString().trim()
-                val url = if (input.startsWith("http://") || input.startsWith("https://")) {
-                    input
-                } else if (input.contains(".") && !input.contains(" ")) {
-                    "https://$input"
-                } else {
-                    "https://www.google.com/search?q=${java.net.URLEncoder.encode(input, "UTF-8")}"
-                }
-                webView.loadUrl(url)
-                hideKeyboard()
-                urlBar.clearFocus()
+                navigate(urlBar.text.toString().trim())
                 true
             } else false
         }
@@ -101,19 +115,7 @@ class MainActivity : Activity() {
 
     private fun setupButtons() {
         btnGo.setOnClickListener {
-            val input = urlBar.text.toString().trim()
-            if (input.isNotEmpty()) {
-                val url = if (input.startsWith("http://") || input.startsWith("https://")) {
-                    input
-                } else if (input.contains(".") && !input.contains(" ")) {
-                    "https://$input"
-                } else {
-                    "https://www.google.com/search?q=${java.net.URLEncoder.encode(input, "UTF-8")}"
-                }
-                webView.loadUrl(url)
-                hideKeyboard()
-                urlBar.clearFocus()
-            }
+            navigate(urlBar.text.toString().trim())
         }
 
         btnBack.setOnClickListener {
@@ -129,8 +131,22 @@ class MainActivity : Activity() {
         }
 
         btnClose.setOnClickListener {
-            closeAndClear()
+            clearAndClose()
         }
+    }
+
+    private fun navigate(input: String) {
+        if (input.isEmpty()) return
+        val url = if (input.startsWith("http://") || input.startsWith("https://")) {
+            input
+        } else if (input.contains(".") && !input.contains(" ")) {
+            "https://$input"
+        } else {
+            "https://www.google.com/search?q=${java.net.URLEncoder.encode(input, "UTF-8")}"
+        }
+        webView.loadUrl(url)
+        hideKeyboard()
+        urlBar.clearFocus()
     }
 
     private fun hideKeyboard() {
@@ -138,13 +154,25 @@ class MainActivity : Activity() {
         imm.hideSoftInputFromWindow(urlBar.windowToken, 0)
     }
 
-    private fun closeAndClear() {
+    private fun clearAndClearData() {
         webView.stopLoading()
         webView.clearHistory()
         webView.clearCache(true)
         webView.clearFormData()
         webView.loadUrl("about:blank")
+
+        try {
+            cacheDir?.deleteRecursively()
+            filesDir?.deleteRecursively()
+            getSharedPreferences("secure_browser_prefs", Context.MODE_PRIVATE)
+                .edit().clear().apply()
+        } catch (_: Exception) {}
+    }
+
+    private fun clearAndClose() {
+        clearAndClearData()
         finishAffinity()
+        System.exit(0)
     }
 
     override fun onResume() {
