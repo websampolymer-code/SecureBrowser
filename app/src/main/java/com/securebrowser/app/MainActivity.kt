@@ -1,11 +1,9 @@
 package com.securebrowser.app
 
 import android.app.Activity
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.os.Bundle
+import android.os.PowerManager
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -25,16 +23,6 @@ class MainActivity : Activity() {
     private lateinit var btnForward: ImageButton
     private lateinit var btnRefresh: ImageButton
     private lateinit var btnClose: ImageButton
-
-    private val screenOffReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == Intent.ACTION_SCREEN_OFF) {
-                clearAndClose()
-            }
-        }
-    }
-
-    private var receiverRegistered = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,18 +46,15 @@ class MainActivity : Activity() {
         }
     }
 
-    override fun onStart() {
-        super.onStart()
-        val filter = IntentFilter(Intent.ACTION_SCREEN_OFF)
-        registerReceiver(screenOffReceiver, filter)
-        receiverRegistered = true
+    private fun isScreenOff(): Boolean {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        return !pm.isInteractive
     }
 
     override fun onStop() {
         super.onStop()
-        if (receiverRegistered) {
-            unregisterReceiver(screenOffReceiver)
-            receiverRegistered = false
+        if (isScreenOff()) {
+            clearAndClose()
         }
     }
 
@@ -154,7 +139,7 @@ class MainActivity : Activity() {
         imm.hideSoftInputFromWindow(urlBar.windowToken, 0)
     }
 
-    private fun clearAndClearData() {
+    private fun clearAndClose() {
         webView.stopLoading()
         webView.clearHistory()
         webView.clearCache(true)
@@ -164,13 +149,11 @@ class MainActivity : Activity() {
         try {
             cacheDir?.deleteRecursively()
             filesDir?.deleteRecursively()
+            externalCacheDir?.deleteRecursively()
             getSharedPreferences("secure_browser_prefs", Context.MODE_PRIVATE)
-                .edit().clear().apply()
+                .edit().clear().commit()
         } catch (_: Exception) {}
-    }
 
-    private fun clearAndClose() {
-        clearAndClearData()
         finishAffinity()
         System.exit(0)
     }
